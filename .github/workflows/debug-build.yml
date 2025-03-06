@@ -10,7 +10,7 @@ jobs:
 
     - name: Install necessary tools
       run: sudo apt install -y wget git sed coreutils libglib2.0-dev
-           libgcrypt20-dev libcares flex perl libpcre2-dev
+           libgcrypt20-dev libcares2 flex perl libpcre2-dev
 
     - name: Build
       run: ./ushark-build.sh -t debug
