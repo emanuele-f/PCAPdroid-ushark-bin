@@ -1,13 +1,13 @@
 name: Debug build
 
-on: [push, pull_request]
+on: [push]
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - name: Install tools
+    - name: Install necessary tools
       run: sudo apt install -y wget git sed coreutils
 
     - name: Build
-      run: ./ushark-build.sh -t debug
+      run: bash ./ushark-build.sh -t debug
