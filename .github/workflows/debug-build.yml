@@ -1,0 +1,17 @@
+name: Debug build
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: nttld/setup-ndk@v1
+      with:
+        ndk-version: 26.1.10909125
+
+    - name: Install tools
+      run: sudo apt install -y wget git sed coreutils
+
+    - name: Build
+      run: ./ushark-build.sh -t debug
