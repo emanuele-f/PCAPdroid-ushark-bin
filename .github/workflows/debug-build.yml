@@ -8,11 +8,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - run: find ${ANDROID_HOME}
-
-    - name: Install NDK
-      run: echo "y" | sudo sdkmanager --install "ndk;26.1.10909125" --sdk_root=${ANDROID_SDK_ROOT}
-
     - name: Install necessary tools
       run: sudo apt install -y wget git sed coreutils
 
