@@ -1,0 +1,17 @@
+name: Debug build
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install packages
+      run: sudo apt install -y wget git sed coreutils build-essential
+           cmake meson perl automake autoconf flex gettext
+           libglib2.0-dev libgcrypt20-dev libcares2 libpcre2-dev
+
+    - name: Build
+      run: ./ushark-build.sh -t debug
