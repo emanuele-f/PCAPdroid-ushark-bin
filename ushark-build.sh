@@ -34,6 +34,8 @@ LIBGCRYPT_VERSION="1.10.3"
 LIBGCRYPT_SHA256="8b0870897ac5ac67ded568dcfadf45969cfa8a6beb0fd60af2a9eadc2a3272aa"
 NGHTTP2_VERSION="1.62.1"
 NGHTTP2_SHA256="3966ec82fda7fc380506d372a260d8d9b6e946be4deaef1fecc1a74b4809ae3d"
+LIBFFI_VERSION="3.4.8"
+LIBFFI_SHA256="bc9842a18898bfacb0ed1252c4febcc7e78fa139fd27fdc7a3e30d9d9356119b"
 WIRESHARK_TAG="v4.1.0rc0-ushark"
 USHARK_TAG="pcapdroid-v1.8.0"
 
@@ -96,6 +98,7 @@ function pull_dependencies {
   download_and_verify libgpg-error "https://www.gnupg.org/ftp/gcrypt/libgpg-error/libgpg-error-$LIBGPGERROR_VERSION.tar.bz2" $LIBGPGERROR_SHA256
   download_and_verify libgcrypt "https://gnupg.org/ftp/gcrypt/libgcrypt/libgcrypt-$LIBGCRYPT_VERSION.tar.bz2" $LIBGCRYPT_SHA256
   download_and_verify nghttp2 "https://github.com/nghttp2/nghttp2/releases/download/v$NGHTTP2_VERSION/nghttp2-$NGHTTP2_VERSION.tar.bz2" $NGHTTP2_SHA256
+  download_and_verify libffi "https://github.com/libffi/libffi/releases/download/v3.4.8/libffi-$LIBFFI_VERSION.tar.gz" $LIBFFI_SHA256
 
   clone_and_checkout wireshark "https://github.com/emanuele-f/wireshark" $WIRESHARK_TAG
   clone_and_checkout ushark "https://github.com/emanuele-f/ushark" $USHARK_TAG
@@ -182,6 +185,7 @@ pull_dependencies
 
 ICONV_SRC="$TOP_DIR/modules/libiconv"
 GLIB2_SRC="$TOP_DIR/modules/glib2"
+LIBFFI_SRC="$TOP_DIR/modules/libffi"
 GPGERROR_SRC="$TOP_DIR/modules/libgpg-error"
 GCRYPT_SRC="$TOP_DIR/modules/libgcrypt"
 NGHTTP2_SRC="$TOP_DIR/modules/nghttp2"
@@ -292,6 +296,13 @@ function build_iconv {
   $MAKE install
 }
 
+function build_libffi {
+  "${LIBFFI_SRC}/configure" --prefix="$INSTALL_DIR" \
+      --host $HOST \
+      --enable-static --disable-shared --disable-tests -disable-doc
+  $MAKE install
+}
+
 function build_glib2 {
   # https://docs.gtk.org/glib/cross-compiling.html
   # https://mesonbuild.com/Cross-compilation.html
@@ -320,8 +331,14 @@ EOF
     link_args : ['-L${INSTALL_DIR}/lib', '-liconv'],\
     include_directories : include_directories('${INSTALL_DIR}/include'))|g" "$GLIB2_SRC/meson.build"
 
+  # NOTE: only download pinned dependencies, install the other ones manually (e.g. libffi)
+  meson subprojects download pcre2 proxy-libintl
+
+  PKG_CONFIG="`which pkg-config`" \
+  PKG_CONFIG_LIBDIR="$INSTALL_DIR/lib/pkgconfig" \
   meson setup --cross-file "$cross_file" \
       --prefix="$INSTALL_DIR" \
+      --wrap-mode=nodownload \
       -Dselinux=disabled -Dxattr=false -Dlibmount=disabled \
       -Dbsymbolic_functions=false -Dtests=false -Dnls=disabled \
       -Dglib_debug=disabled -Dglib_assert=false -Dglib_checks=false \
@@ -507,7 +524,7 @@ mkdir -p "${HOST_BUILD}"
 
 compiled=
 declare -a abis=(armeabi-v7a arm64-v8a x86 x86_64)
-declare -a libs=(iconv glib2 gpgerror gcrypt nghttp2 wireshark ushark)
+declare -a libs=(iconv libffi glib2 gpgerror gcrypt nghttp2 wireshark ushark)
 
 trap check_error EXIT
 
