@@ -48,6 +48,7 @@ function usage {
   echo "  -b, --build lib         only build the specified lib"
   echo "  -j, --jobs n            specify the number of jobs for the builds"
   echo "  -t, --type type         set the build type: debug/release"
+  echo "  -u, --ushark path       use local ushark sources (overrides USHARK_TAG)"
   echo "  clean                   clean the project"
 }
 
@@ -101,7 +102,10 @@ function pull_dependencies {
   download_and_verify libffi "https://github.com/libffi/libffi/releases/download/v3.4.8/libffi-$LIBFFI_VERSION.tar.gz" $LIBFFI_SHA256
 
   clone_and_checkout wireshark "https://github.com/emanuele-f/wireshark" $WIRESHARK_TAG
-  clone_and_checkout ushark "https://github.com/emanuele-f/ushark" $USHARK_TAG
+
+  if [ -z "$LOCAL_USHARK" ]; then
+    clone_and_checkout ushark "https://github.com/emanuele-f/ushark" $USHARK_TAG
+  fi
 }
 
 function restore_glib2_meson_build {
@@ -111,6 +115,8 @@ function restore_glib2_meson_build {
 TARGET_ABI=
 TARGET_LIB=
 DO_CLEAN=
+USHARK_SRC=
+LOCAL_USHARK=
 BUILD_TYPE=release
 JOBS=`nproc --ignore 1`
 
@@ -137,6 +143,12 @@ while [[ $# -gt 0 ]]; do
       ;;
     -j|--jobs)
       JOBS="$2"
+      shift
+      shift
+      ;;
+    -u|--ushark)
+      USHARK_SRC="$2"
+      LOCAL_USHARK=1
       shift
       shift
       ;;
@@ -190,7 +202,10 @@ GPGERROR_SRC="$TOP_DIR/modules/libgpg-error"
 GCRYPT_SRC="$TOP_DIR/modules/libgcrypt"
 NGHTTP2_SRC="$TOP_DIR/modules/nghttp2"
 WIRESHARK_SRC="$TOP_DIR/modules/wireshark"
-USHARK_SRC="$TOP_DIR/modules/ushark"
+
+if [ -z "$LOCAL_USHARK" ]; then
+    USHARK_SRC="$TOP_DIR/modules/ushark"
+fi
 
 if [ -z "$TARGET_ABI" ]; then
   rm -rf dist build
