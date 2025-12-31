@@ -43,9 +43,12 @@ function usage {
   echo "Usage: `basename $0` [args]"
   echo "Supported ABIs: armeabi-v7a arm64-v8a x86 x86_64"
   echo
+  echo "By default, builds all Android ABIs + host x86_64"
+  echo
   echo "Args:"
-  echo "  -a, --abi abi           only build for the specified ABI"
+  echo "  -a, --abi abi           only build for the specified Android ABI"
   echo "  -b, --build lib         only build the specified lib"
+  echo "  -H, --host              only build for host (x86_64, uses system compiler)"
   echo "  -j, --jobs n            specify the number of jobs for the builds"
   echo "  -t, --type type         set the build type: debug/release"
   echo "  -u, --ushark path       use local ushark sources (overrides USHARK_TAG)"
@@ -119,6 +122,7 @@ USHARK_SRC=
 LOCAL_USHARK=
 BUILD_TYPE=release
 JOBS=`nproc --ignore 1`
+HOST_BUILD_MODE=
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -152,6 +156,10 @@ while [[ $# -gt 0 ]]; do
       shift
       shift
       ;;
+    -H|--host)
+      HOST_BUILD_MODE=1
+      shift
+      ;;
     clean)
       DO_CLEAN=1
       shift
@@ -172,26 +180,28 @@ if [ ! -z $DO_CLEAN ]; then
   exit 0
 fi
 
-if [ -z "$ANDROID_HOME" ]; then
-  echo "The ANDROID_HOME environment variable is not set" >&2
-  exit 1
+if [ -z "$HOST_BUILD_MODE" ]; then
+  if [ -z "$ANDROID_HOME" ]; then
+    echo "The ANDROID_HOME environment variable is not set" >&2
+    exit 1
+  fi
+
+  ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/$NDK_VERSION"
+  ANDROID_CMAKE_TOOLCHAIN="$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake"
+  ANDROID_TOOLCHAIN="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64"
+
+  if [ ! -d "$ANDROID_NDK_ROOT" ]; then
+    echo "The Android NDK root folder is missing: $ANDROID_NDK_ROOT" >&2
+    exit 1
+  fi
+
+  if [ ! -f "$ANDROID_CMAKE_TOOLCHAIN" ]; then
+    echo "The Android NDK cross compilation toolchain is missing: $ANDROID_CMAKE_TOOLCHAIN" >&2
+    exit 1
+  fi
+
+  export PATH="$ANDROID_TOOLCHAIN/bin:$PATH"
 fi
-
-ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/$NDK_VERSION"
-ANDROID_CMAKE_TOOLCHAIN="$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake"
-ANDROID_TOOLCHAIN="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64"
-
-if [ ! -d "$ANDROID_NDK_ROOT" ]; then
-  echo "The Android NDK root folder is missing: $ANDROID_NDK_ROOT" >&2
-  exit 1
-fi
-
-if [ ! -f "$ANDROID_CMAKE_TOOLCHAIN" ]; then
-  echo "The Android NDK cross compilation toolchain is missing: $ANDROID_CMAKE_TOOLCHAIN" >&2
-  exit 1
-fi
-
-export PATH="$ANDROID_TOOLCHAIN/bin:$PATH"
 
 pull_dependencies
 
@@ -207,7 +217,7 @@ if [ -z "$LOCAL_USHARK" ]; then
     USHARK_SRC="$TOP_DIR/modules/ushark"
 fi
 
-if [ -z "$TARGET_ABI" ]; then
+if [ -z "$TARGET_ABI" ] && [ -z "$HOST_BUILD_MODE" ]; then
   rm -rf dist build
 fi
 mkdir -p dist build
@@ -303,17 +313,54 @@ function select_abi {
   export LDFLAGS="${ABI_LDFLAGS}"
 }
 
+function select_host_abi {
+  ABI="x86_64"
+  HOST=x86_64-linux-gnu
+  CPU=x86_64
+
+  BUILD_ROOT=`readlink -f ${TOP_DIR}/build/host-$ABI`
+  INSTALL_DIR="$BUILD_ROOT/install"
+
+  # Use system compiler (clang)
+  export CC="clang"
+  export CXX="clang++"
+  export RANLIB="ranlib"
+  export AR="ar"
+  export NM="nm"
+  export STRIP="strip"
+  export OBJCOPY="objcopy"
+  export READELF="readelf"
+
+  local gc_sections_flags=
+  if [[ $BUILD_TYPE == "Release" ]]; then
+    gc_sections_flags="-fvisibility=hidden -ffunction-sections -fdata-sections"
+  fi
+
+  export CFLAGS="${BUILD_TYPE_CFLAGS} -fPIC ${gc_sections_flags}"
+  export LDFLAGS=""
+}
+
 function build_iconv {
   # required by glib2 on older Android SDKs
+  local host_flag=
+  if [ -z "$HOST_BUILD_MODE" ]; then
+    host_flag="--host $HOST"
+  fi
+
   "${ICONV_SRC}/configure" --prefix="$INSTALL_DIR" \
-      --host $HOST \
+      $host_flag \
       --enable-static --disable-shared --disable-tests -disable-doc
   $MAKE install
 }
 
 function build_libffi {
+  local host_flag=
+  if [ -z "$HOST_BUILD_MODE" ]; then
+    host_flag="--host $HOST"
+  fi
+
   "${LIBFFI_SRC}/configure" --prefix="$INSTALL_DIR" \
-      --host $HOST \
+      $host_flag \
       --enable-static --disable-shared --disable-tests -disable-doc
   $MAKE install
 }
@@ -324,10 +371,15 @@ function build_glib2 {
   cd "$GLIB2_SRC"
 
   # generate cross-file
+  local system_type='android'
+  if [ ! -z "$HOST_BUILD_MODE" ]; then
+    system_type='linux'
+  fi
+
   cross_file=`readlink -f ${BUILD}/cross-file.txt`
   cat > "$cross_file" <<EOF
 [host_machine]
-system = 'android'
+system = '${system_type}'
 cpu_family = '${CPU}'
 cpu = '${CPU}'
 endian = 'little'
@@ -375,19 +427,26 @@ function build_gpgerror {
   ./autogen.sh
   cd "$BUILD"
 
+  local host_flag=
+  if [ -z "$HOST_BUILD_MODE" ]; then
+    host_flag="--host $HOST"
+  fi
+
   "$GPGERROR_SRC/configure" --prefix="$INSTALL_DIR" \
-      --host $HOST \
+      $host_flag \
       --enable-static --disable-shared --disable-tests -disable-doc
 
-  # needed to manually generate lock-obj-pub. files. Run from /data/local/tmp
-  cd src
-  $MAKE gen-posix-lock-obj
-  cd -
+  if [ -z "$HOST_BUILD_MODE" ]; then
+    # needed to manually generate lock-obj-pub. files. Run from /data/local/tmp
+    cd src
+    $MAKE gen-posix-lock-obj
+    cd -
 
-  # patch: install missing lock files
-  lock_obj="$GPGERROR_SRC/src/syscfg/$GPGERR_LOCKOBJ_DEST"
-  if [ ! -f "$lock_obj" ]; then
-    cp ${TOP_DIR}/gpgerror-lock-obj/$GPGERR_LOCKOBJ "$lock_obj"
+    # patch: install missing lock files
+    lock_obj="$GPGERROR_SRC/src/syscfg/$GPGERR_LOCKOBJ_DEST"
+    if [ ! -f "$lock_obj" ]; then
+      cp ${TOP_DIR}/gpgerror-lock-obj/$GPGERR_LOCKOBJ "$lock_obj"
+    fi
   fi
 
   # build and install
@@ -402,8 +461,13 @@ function build_gcrypt {
   # patch: remove tests generation, which fails in basic.c for x86_64
   sed -i "s/ tests$//g" "$GCRYPT_SRC/Makefile.in"
 
+  local host_flag=
+  if [ -z "$HOST_BUILD_MODE" ]; then
+    host_flag="--host $HOST"
+  fi
+
   "$GCRYPT_SRC/configure" --prefix="$INSTALL_DIR" \
-      --host $HOST \
+      $host_flag \
       --enable-static --disable-shared -disable-doc \
       --enable-ciphers="arcfour des aes rfc2268 seed camellia idea chacha20 sm4" \
       --enable-digests="md5 sha1 sha256 sha512 sha3 sm3 blake2" \
@@ -428,8 +492,13 @@ function build_gcrypt {
 function build_nghttp2 {
   cd "$BUILD"
 
+  local host_flag=
+  if [ -z "$HOST_BUILD_MODE" ]; then
+    host_flag="--host $HOST"
+  fi
+
   "$NGHTTP2_SRC/configure" --prefix="$INSTALL_DIR" \
-      --host $HOST \
+      $host_flag \
       --enable-static --disable-shared \
       --enable-lib-only
 
@@ -454,9 +523,16 @@ function build_lemon {
 
 function build_wireshark {
   # https://zwyuan.github.io/2016/07/18/cross-compile-wireshark-for-android
-  cmake -DCMAKE_SYSTEM_NAME=Android -DCMAKE_TOOLCHAIN_FILE="$ANDROID_CMAKE_TOOLCHAIN"\
-    -DANDROID_NDK="$ANDROID_NDK_ROOT" -DANDROID_ABI="$ABI" -DCMAKE_ANDROID_ARCH_ABI="$ABI" \
-    -DCMAKE_SYSTEM_NAME=Android -DANDROID_PLATFORM="android-$MIN_SDK" -DCMAKE_SYSTEM_VERSION=$MIN_SDK \
+  local android_opts=
+
+  if [ -z "$HOST_BUILD_MODE" ]; then
+    # Android cross-compilation
+    android_opts="-DCMAKE_SYSTEM_NAME=Android -DCMAKE_TOOLCHAIN_FILE=$ANDROID_CMAKE_TOOLCHAIN \
+      -DANDROID_NDK=$ANDROID_NDK_ROOT -DANDROID_ABI=$ABI -DCMAKE_ANDROID_ARCH_ABI=$ABI \
+      -DANDROID_PLATFORM=android-$MIN_SDK -DCMAKE_SYSTEM_VERSION=$MIN_SDK"
+  fi
+
+  cmake $android_opts \
     -DLEMON_BIN="${HOST_BUILD}/wireshark/run/lemon" \
     -DHAVE_C99_VSNPRINTF=TRUE \
     -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DENABLE_STATIC=ON -DENABLE_WERROR=OFF \
@@ -497,6 +573,11 @@ function build_ushark {
   if [[ $BUILD_TYPE == "Release" ]]; then
     gc_sections_flags="-Wl,--gc-sections -Wl,--exclude-libs=ALL"
   fi
+  
+  local libintl=
+  if [ -z "$HOST_BUILD_MODE" ]; then
+    libintl="$libs/libintl.a"
+  fi
 
   echo "Building libushark.so ..."
   ${CC} $USHARK_CFLAGS $LDFLAGS $gc_sections_flags -z defs \
@@ -507,9 +588,13 @@ function build_ushark {
 		$libs/libui.a \
     $libs/libglib-2.0.a $libs/libgcrypt.a $libs/libgpg-error.a \
     $libs/libiconv.a $libs/libpcre2-8.a $libs/libnghttp2.a \
-    $libs/libintl.a -lm
+    $libintl -lm
 
-  dist="${TOP_DIR}/dist/jniLibs/$ABI"
+  if [ -z "$HOST_BUILD_MODE" ]; then
+    dist="${TOP_DIR}/dist/jniLibs/$ABI"
+  else
+    dist="${TOP_DIR}/dist/$ABI"
+  fi
   rm -rf "$dist"
   mkdir -p "$dist"
   cp libushark.so "$dist"
@@ -547,37 +632,93 @@ CUR_BUILD=lemon
 build_lemon
 CUR_BUILD=
 
-for abi in "${abis[@]}"; do
-  if [[ -z "$TARGET_ABI" ]] || [[ "$TARGET_ABI" == $abi ]]; then
-    select_abi $abi
-    compiled=1
-    echo "## Target ABI: $abi"
+# Determine what to build
+build_android=
+build_host=
 
-    if [[ -z "$TARGET_LIB" ]]; then
-      rm -rf "$BUILD_ROOT"
-      rm -rf "$INSTALL_DIR"
-    fi
-    mkdir -p "$BUILD_ROOT"
-    mkdir -p "$INSTALL_DIR"
-
-    for lib in "${libs[@]}"; do
-      if [[ -z "$TARGET_LIB" ]] || [[ "$TARGET_LIB" == $lib ]]; then
-        BUILD="$BUILD_ROOT/$lib"
-        rm -rf "$BUILD"
-        mkdir -p "$BUILD"
-        cd "$BUILD"
-
-        echo "[+] Build $lib..."
-
-        CUR_BUILD=$lib
-        eval "build_$lib"
-        CUR_BUILD=
-      fi
-
-      cd "$TOP_DIR"
-    done
+if [ ! -z "$HOST_BUILD_MODE" ]; then
+  # --host flag specified: only build host
+  if [[ ! -z "$TARGET_ABI" ]] && [[ "$TARGET_ABI" != "x86_64" ]]; then
+    echo "Host builds only support x86_64 ABI" >&2
+    exit 1
   fi
-done
+  build_host=1
+elif [ ! -z "$TARGET_ABI" ]; then
+  # -a flag specified without --host: only build that Android ABI
+  build_android=1
+else
+  # Default: build all Android ABIs + host x86_64
+  build_android=1
+  build_host=1
+fi
+
+# Build for Android ABIs
+if [ ! -z "$build_android" ]; then
+  for abi in "${abis[@]}"; do
+    if [[ -z "$TARGET_ABI" ]] || [[ "$TARGET_ABI" == $abi ]]; then
+      select_abi $abi
+      compiled=1
+      echo "## Target ABI: $abi"
+
+      if [[ -z "$TARGET_LIB" ]]; then
+        rm -rf "$BUILD_ROOT"
+        rm -rf "$INSTALL_DIR"
+      fi
+      mkdir -p "$BUILD_ROOT"
+      mkdir -p "$INSTALL_DIR"
+
+      for lib in "${libs[@]}"; do
+        if [[ -z "$TARGET_LIB" ]] || [[ "$TARGET_LIB" == $lib ]]; then
+          BUILD="$BUILD_ROOT/$lib"
+          rm -rf "$BUILD"
+          mkdir -p "$BUILD"
+          cd "$BUILD"
+
+          echo "[+] Build $lib..."
+
+          CUR_BUILD=$lib
+          eval "build_$lib"
+          CUR_BUILD=
+        fi
+
+        cd "$TOP_DIR"
+      done
+    fi
+  done
+fi
+
+# Build for host x86_64
+if [ ! -z "$build_host" ]; then
+  HOST_BUILD_MODE=1
+  select_host_abi
+  compiled=1
+  echo "## Host build for x86_64"
+
+  if [[ -z "$TARGET_LIB" ]]; then
+    rm -rf "$BUILD_ROOT"
+    rm -rf "$INSTALL_DIR"
+  fi
+  mkdir -p "$BUILD_ROOT"
+  mkdir -p "$INSTALL_DIR"
+
+  for lib in "${libs[@]}"; do
+    if [[ -z "$TARGET_LIB" ]] || [[ "$TARGET_LIB" == $lib ]]; then
+      BUILD="$BUILD_ROOT/$lib"
+      rm -rf "$BUILD"
+      mkdir -p "$BUILD"
+      cd "$BUILD"
+
+      echo "[+] Build $lib..."
+
+      CUR_BUILD=$lib
+      eval "build_$lib"
+      CUR_BUILD=
+    fi
+
+    cd "$TOP_DIR"
+  done
+  HOST_BUILD_MODE=
+fi
 
 if [[ ! -z "$TARGET_ABI" ]] && [[ -z $compiled ]]; then
   echo "Invalid ABI: $TARGET_ABI" >&2
