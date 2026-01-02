@@ -172,7 +172,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-MAKE="make -j$MAKE_JOBS"
+MAKE="make -j$JOBS"
 
 if [ ! -z $DO_CLEAN ]; then
   rm -rf modules dist build
