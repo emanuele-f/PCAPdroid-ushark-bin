@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU General Public License
 # along with PCAPdroid.  If not, see <http://www.gnu.org/licenses/>.
 #
-# Copyright 2024-25 - Emanuele Faranda
+# Copyright 2024-26 - Emanuele Faranda
 #
 
 set -e
@@ -442,11 +442,11 @@ function build_gpgerror {
     $MAKE gen-posix-lock-obj
     cd -
 
-    # patch: install missing lock files
+    # patch: install the correct lock file
+    # NOTE: the gpgerror source dir is shared across the arch builds
     lock_obj="$GPGERROR_SRC/src/syscfg/$GPGERR_LOCKOBJ_DEST"
-    if [ ! -f "$lock_obj" ]; then
-      cp ${TOP_DIR}/gpgerror-lock-obj/$GPGERR_LOCKOBJ "$lock_obj"
-    fi
+    rm -f "$lock_obj"
+    cp ${TOP_DIR}/gpgerror-lock-obj/$GPGERR_LOCKOBJ "$lock_obj"
   fi
 
   # build and install
@@ -634,6 +634,7 @@ trap check_error EXIT
 
 CUR_BUILD=lemon
 build_lemon
+cd "$TOP_DIR"
 CUR_BUILD=
 
 # Determine what to build
