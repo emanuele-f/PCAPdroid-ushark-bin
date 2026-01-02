@@ -227,7 +227,7 @@ BUILD_TYPE_CFLAGS=
 if [[ "$BUILD_TYPE" == release ]]; then
   MESON_BUILD_TYPE=release
   BUILD_TYPE=Release
-  BUILD_TYPE_CFLAGS="-O2"
+  BUILD_TYPE_CFLAGS="-g -O2"
 elif [[ "$BUILD_TYPE" == debug ]]; then
   MESON_BUILD_TYPE=debug
   BUILD_TYPE=Debug
@@ -598,6 +598,10 @@ function build_ushark {
   rm -rf "$dist"
   mkdir -p "$dist"
   cp libushark.so "$dist"
+
+  # Extract debug symbols to separate file
+  echo "Extracting debug symbols..."
+  ${OBJCOPY} --only-keep-debug "$dist/libushark.so" "$dist/libushark.so.debug"
 
   if [[ $BUILD_TYPE == "Release" ]]; then
     ${STRIP} "$dist/libushark.so"
