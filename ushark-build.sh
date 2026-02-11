@@ -37,7 +37,7 @@ NGHTTP2_SHA256="3966ec82fda7fc380506d372a260d8d9b6e946be4deaef1fecc1a74b4809ae3d
 LIBFFI_VERSION="3.4.8"
 LIBFFI_SHA256="bc9842a18898bfacb0ed1252c4febcc7e78fa139fd27fdc7a3e30d9d9356119b"
 WIRESHARK_TAG="v4.1.0rc0-ushark2"
-USHARK_TAG="pcapdroid-v1.9.0-rc.1"
+USHARK_TAG="pcapdroid-v1.9.0"
 
 function usage {
   echo "Usage: `basename $0` [args]"
