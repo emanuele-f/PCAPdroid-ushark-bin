@@ -36,7 +36,7 @@ NGHTTP2_VERSION="1.62.1"
 NGHTTP2_SHA256="3966ec82fda7fc380506d372a260d8d9b6e946be4deaef1fecc1a74b4809ae3d"
 LIBFFI_VERSION="3.4.8"
 LIBFFI_SHA256="bc9842a18898bfacb0ed1252c4febcc7e78fa139fd27fdc7a3e30d9d9356119b"
-WIRESHARK_TAG="v4.1.0rc0-ushark2"
+WIRESHARK_TAG="v4.7.1-ushark"
 USHARK_TAG="pcapdroid-v1.9.0"
 
 function usage {
@@ -82,7 +82,7 @@ function download_and_verify {
   tar -xf "modules/$fname" -C "modules/$1" --strip-components=1
 }
 
-# # download_and_verify name "url" "tag/branch"
+# download_and_verify name "url" "tag/branch"
 function clone_and_checkout {
   if [[ ! -d "modules/$1/.git" ]]; then
     rm -rf "modules/$1"
@@ -516,7 +516,7 @@ function build_lemon {
     mkdir -p "$host_wireshark"
     cd "$host_wireshark"
 
-    cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_STATIC=ON "$WIRESHARK_SRC"
+    cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF "$WIRESHARK_SRC"
     $MAKE lemon
   fi
 }
@@ -532,11 +532,16 @@ function build_wireshark {
       -DANDROID_PLATFORM=android-$MIN_SDK -DCMAKE_SYSTEM_VERSION=$MIN_SDK"
   fi
 
+  # Disable optional deps that ushark does not use. On the Android sysroot these
+  # are absent anyway, but on the host they would otherwise be auto-detected from
+  # the system, pulling unresolved libxml2/c-ares symbols into the static libs
+  # that the ushark link does not provide. Keep all targets self-contained.
   cmake $android_opts \
+    -DCMAKE_DISABLE_FIND_PACKAGE_LibXml2=ON \
+    -DCMAKE_DISABLE_FIND_PACKAGE_CARES=ON \
     -DLEMON_BIN="${HOST_BUILD}/wireshark/run/lemon" \
     -DHAVE_C99_VSNPRINTF=TRUE \
-    -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DENABLE_STATIC=ON -DENABLE_WERROR=OFF \
-    -DBUILD_tshark=ON \
+    -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DBUILD_SHARED_LIBS=OFF -DENABLE_WERROR=OFF \
     -DGLIB2_LIBRARY="$INSTALL_DIR/lib/libglib-2.0.a" \
     -DGLIB2_MAIN_INCLUDE_DIR="$INSTALL_DIR/include/glib-2.0" -DGLIB2_INTERNAL_INCLUDE_DIR="$INSTALL_DIR/lib/glib-2.0/include" \
     -DGTHREAD2_LIBRARY="$INSTALL_DIR/lib/libgthread-2.0.a" -DGTHREAD2_INCLUDE_DIR="$INSTALL_DIR/include" \
@@ -546,7 +551,7 @@ function build_wireshark {
     -DNGHTTP2_LIBRARY="$INSTALL_DIR/lib/libnghttp2.a" -DNGHTTP2_INCLUDE_DIR="$INSTALL_DIR/include/nghttp2" \
     "$WIRESHARK_SRC"
 
-  $MAKE epan wiretap version_info wsutil ui
+  $MAKE epan wiretap wsutil ui
 
   # install
   find ./run -maxdepth 1 -name '*.a' -exec cp "{}" "$INSTALL_DIR/lib" \;
@@ -559,9 +564,6 @@ function build_ushark {
 
   USHARK_CFLAGS="${CFLAGS} -I${WIRESHARK_SRC} -I${WIRESHARK_SRC}/include -I${wireshark_build}\
     -I${INSTALL_DIR}/include -I${INSTALL_DIR}/include/glib-2.0 -I${INSTALL_DIR}/lib/glib-2.0/include"
-
-  echo "Building frame_tvbuff.o ..."
-  ${CC} $USHARK_CFLAGS -c "$WIRESHARK_SRC/frame_tvbuff.c" -o frame_tvbuff.o
 
   echo "Building http2.o ..."
   ${CC} $USHARK_CFLAGS -c "$src/http2.c" -o http2.o
@@ -582,9 +584,9 @@ function build_ushark {
   echo "Building libushark.so ..."
   ${CC} $USHARK_CFLAGS $LDFLAGS $gc_sections_flags -z defs \
     -shared -Wl,-soname,libushark.so \
-    -o libushark.so frame_tvbuff.o http2.o ushark.o \
+    -o libushark.so http2.o ushark.o \
     $libs/libwireshark.a \
-		$libs/libwiretap.a $libs/libversion_info.a $libs/libwsutil.a \
+		$libs/libwiretap.a $libs/libwsutil.a \
 		$libs/libui.a \
     $libs/libglib-2.0.a $libs/libgcrypt.a $libs/libgpg-error.a \
     $libs/libiconv.a $libs/libpcre2-8.a $libs/libnghttp2.a \
