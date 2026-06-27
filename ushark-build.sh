@@ -24,18 +24,18 @@ MIN_SDK=21
 NDK_VERSION="28.2.13676358"
 TOP_DIR=`readlink -f .`
 
-LIBICONV_VERSION="1.17"
-LIBICONV_SHA256="8f74213b56238c85a50a5329f77e06198771e70dd9a739779f4c02f65d971313"
-GLIB2_VERSION="2.80.2"
-GLIB2_SHA256="b9cfb6f7a5bd5b31238fd5d56df226b2dda5ea37611475bf89f6a0f9400fe8bd"
-LIBGPGERROR_VERSION="1.49"
-LIBGPGERROR_SHA256="8b79d54639dbf4abc08b5406fb2f37e669a2dec091dd024fb87dd367131c63a9"
-LIBGCRYPT_VERSION="1.10.3"
-LIBGCRYPT_SHA256="8b0870897ac5ac67ded568dcfadf45969cfa8a6beb0fd60af2a9eadc2a3272aa"
-NGHTTP2_VERSION="1.62.1"
-NGHTTP2_SHA256="3966ec82fda7fc380506d372a260d8d9b6e946be4deaef1fecc1a74b4809ae3d"
-LIBFFI_VERSION="3.4.8"
-LIBFFI_SHA256="bc9842a18898bfacb0ed1252c4febcc7e78fa139fd27fdc7a3e30d9d9356119b"
+LIBICONV_VERSION="1.19"
+LIBICONV_SHA256="88dd96a8c0464eca144fc791ae60cd31cd8ee78321e67397e25fc095c4a19aa6"
+GLIB2_VERSION="2.88.1"
+GLIB2_SHA256="51ab804c56f6eab3e5045c774d1290ac5e4c923d4f9a3d8e33123bee45c1840e"
+LIBGPGERROR_VERSION="1.61"
+LIBGPGERROR_SHA256="7a85413f2bc354f4f8aa832b718af122e48965e9e0eb9012ee659c13c6385c93"
+LIBGCRYPT_VERSION="1.12.2"
+LIBGCRYPT_SHA256="7ce33c2492221a0436f96a8500215e9f3e3dcb5fd26a757cd415e7a843babd5e"
+NGHTTP2_VERSION="1.69.0"
+NGHTTP2_SHA256="3f185f5b1c3e77885eb9cf3f2c4da4b1a9f73a24bf5957b829183ad137f82dc8"
+LIBFFI_VERSION="3.6.0"
+LIBFFI_SHA256="31ff1fe32deaebfbb388727f32677bb254bf2a41382c51464c0b1837c9ee9828"
 WIRESHARK_TAG="v4.7.1-ushark"
 USHARK_TAG="pcapdroid-v1.9.0"
 
@@ -102,7 +102,7 @@ function pull_dependencies {
   download_and_verify libgpg-error "https://www.gnupg.org/ftp/gcrypt/libgpg-error/libgpg-error-$LIBGPGERROR_VERSION.tar.bz2" $LIBGPGERROR_SHA256
   download_and_verify libgcrypt "https://gnupg.org/ftp/gcrypt/libgcrypt/libgcrypt-$LIBGCRYPT_VERSION.tar.bz2" $LIBGCRYPT_SHA256
   download_and_verify nghttp2 "https://github.com/nghttp2/nghttp2/releases/download/v$NGHTTP2_VERSION/nghttp2-$NGHTTP2_VERSION.tar.bz2" $NGHTTP2_SHA256
-  download_and_verify libffi "https://github.com/libffi/libffi/releases/download/v3.4.8/libffi-$LIBFFI_VERSION.tar.gz" $LIBFFI_SHA256
+  download_and_verify libffi "https://github.com/libffi/libffi/releases/download/v$LIBFFI_VERSION/libffi-$LIBFFI_VERSION.tar.gz" $LIBFFI_SHA256
 
   clone_and_checkout wireshark "https://github.com/emanuele-f/wireshark" $WIRESHARK_TAG
 
