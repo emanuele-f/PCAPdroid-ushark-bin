@@ -95,6 +95,33 @@ function clone_and_checkout {
   cd "$TOP_DIR"
 }
 
+function git_module_has_local_changes {
+  local mod="$1"
+  [ -d "$mod/.git" ] || return 1
+
+  # uncommitted (tracked) or staged changes
+  if ! git -C "$mod" diff --quiet HEAD 2>/dev/null; then
+    echo "  $mod: uncommitted changes in working tree" >&2
+    return 0
+  fi
+
+  # untracked, non-ignored files
+  if [ -n "$(git -C "$mod" ls-files --others --exclude-standard 2>/dev/null)" ]; then
+    echo "  $mod: untracked files present" >&2
+    return 0
+  fi
+
+  # commits on HEAD not present on any origin branch (local-only commits/branch)
+  local local_only
+  local_only=$(git -C "$mod" rev-list --count HEAD --not --remotes=origin 2>/dev/null)
+  if [ "${local_only:-0}" -gt 0 ]; then
+    echo "  $mod: $local_only commit(s) not present on origin" >&2
+    return 0
+  fi
+
+  return 1
+}
+
 function pull_dependencies {
   mkdir -p modules
   download_and_verify libiconv "https://ftp.gnu.org/pub/gnu/libiconv/libiconv-$LIBICONV_VERSION.tar.gz" $LIBICONV_SHA256
@@ -175,7 +202,21 @@ done
 MAKE="make -j$JOBS"
 
 if [ ! -z $DO_CLEAN ]; then
-  rm -rf modules dist build
+  rm -rf dist build
+
+  PRESERVE_MODULES=
+  for mod in modules/wireshark modules/ushark; do
+    if git_module_has_local_changes "$mod"; then
+      PRESERVE_MODULES=1
+    fi
+  done
+
+  if [ -n "$PRESERVE_MODULES" ]; then
+    echo "Local changes detected; keeping modules folder"
+  else
+    rm -rf modules
+  fi
+
   restore_glib2_meson_build
   exit 0
 fi
