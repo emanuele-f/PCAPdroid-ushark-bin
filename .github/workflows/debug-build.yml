@@ -17,4 +17,4 @@ jobs:
       run: pipx install 'meson>=1.4.0'
 
     - name: Build
-      run: ./ushark-build.sh -t debug
+      run: ./ushark-build.sh -t debug -v

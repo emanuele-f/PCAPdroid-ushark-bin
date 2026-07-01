@@ -52,6 +52,7 @@ function usage {
   echo "  -j, --jobs n            specify the number of jobs for the builds"
   echo "  -t, --type type         set the build type: debug/release"
   echo "  -u, --ushark path       use local ushark sources (overrides USHARK_TAG)"
+  echo "  -v, --verbose           show the full build output"
   echo "  clean                   clean the project"
 }
 
@@ -150,6 +151,7 @@ LOCAL_USHARK=
 BUILD_TYPE=release
 JOBS=`nproc --ignore 1`
 HOST_BUILD_MODE=
+VERBOSE=
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -185,6 +187,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     -H|--host)
       HOST_BUILD_MODE=1
+      shift
+      ;;
+    -v|--verbose)
+      VERBOSE=1
       shift
       ;;
     clean)
@@ -286,6 +292,7 @@ BUILD=
 BUILD_ROOT=
 INSTALL_DIR=
 CUR_BUILD=
+CUR_LOGFILE=
 GPGERR_LOCKOBJ=
 GPGERR_LOCKOBJ_DEST=
 
@@ -551,8 +558,6 @@ function build_lemon {
   local host_wireshark="${HOST_BUILD}/wireshark"
 
   if [ ! -x "$host_wireshark/run/lemon" ]; then
-    echo "[+] Build lemon..."
-
     rm -rf "$host_wireshark"
     mkdir -p "$host_wireshark"
     cd "$host_wireshark"
@@ -661,9 +666,40 @@ function build_ushark {
 }
 
 function check_error {
-  if [ ! -z $CUR_BUILD ]; then
+  if [ ! -z "$CUR_BUILD" ]; then
+    if [ -z "$VERBOSE" ]; then
+      # In non-verbose mode the label was left without a trailing newline
+      echo
+
+      if [ -n "$CUR_LOGFILE" ] && [ -f "$CUR_LOGFILE" ]; then
+        echo "Fatal error while building '$CUR_BUILD'" >&2
+        echo "----- last 40 lines of $CUR_LOGFILE -----" >&2
+        tail -n 40 "$CUR_LOGFILE" >&2
+        echo "----- (full log: $CUR_LOGFILE) -----" >&2
+        return
+      fi
+    fi
+
     echo "Fatal error while building '$CUR_BUILD'" >&2
   fi
+}
+
+function run_build {
+  local name="$1"
+  CUR_BUILD="$name"
+  CUR_LOGFILE="${BUILD_ROOT:-$TOP_DIR/build}/$name.log"
+
+  if [ -n "$VERBOSE" ]; then
+    echo "[+] Build $name..."
+    ( set -o pipefail; eval "build_$name" 2>&1 | tee "$CUR_LOGFILE" )
+  else
+    echo -n "[+] Build $name..."
+    eval "build_$name" > "$CUR_LOGFILE" 2>&1
+    echo
+  fi
+
+  CUR_BUILD=
+  CUR_LOGFILE=
 }
 
 HOST_BUILD="${TOP_DIR}/build/host"
@@ -675,10 +711,8 @@ declare -a libs=(iconv libffi glib2 gpgerror gcrypt nghttp2 wireshark ushark)
 
 trap check_error EXIT
 
-CUR_BUILD=lemon
-build_lemon
+run_build lemon
 cd "$TOP_DIR"
-CUR_BUILD=
 
 # Determine what to build
 build_android=
@@ -722,11 +756,7 @@ if [ ! -z "$build_android" ]; then
           mkdir -p "$BUILD"
           cd "$BUILD"
 
-          echo "[+] Build $lib..."
-
-          CUR_BUILD=$lib
-          eval "build_$lib"
-          CUR_BUILD=
+          run_build "$lib"
         fi
 
         cd "$TOP_DIR"
@@ -756,11 +786,7 @@ if [ ! -z "$build_host" ]; then
       mkdir -p "$BUILD"
       cd "$BUILD"
 
-      echo "[+] Build $lib..."
-
-      CUR_BUILD=$lib
-      eval "build_$lib"
-      CUR_BUILD=
+      run_build "$lib"
     fi
 
     cd "$TOP_DIR"
