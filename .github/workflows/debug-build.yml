@@ -10,8 +10,11 @@ jobs:
 
     - name: Install packages
       run: sudo apt install -y wget git sed coreutils build-essential
-           cmake meson perl automake autoconf flex gettext
+           cmake perl automake autoconf flex gettext
            libglib2.0-dev libgcrypt20-dev libcares2 libpcre2-dev
+
+    - name: Install meson
+      run: pipx install 'meson>=1.4.0'
 
     - name: Build
       run: ./ushark-build.sh -t debug
