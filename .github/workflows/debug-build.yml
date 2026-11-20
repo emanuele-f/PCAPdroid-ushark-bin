@@ -16,5 +16,8 @@ jobs:
     - name: Install meson
       run: pipx install 'meson>=1.4.0'
 
+    - name: Install Android NDK
+      run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;28.2.13676358"
+
     - name: Build
       run: ./ushark-build.sh -t debug -v
