@@ -227,6 +227,9 @@ if [ ! -z $DO_CLEAN ]; then
   exit 0
 fi
 
+# Strip the build paths from __FILE__ and from the debug info, to make the build reproducible
+REPRODUCIBLE_CFLAGS="-ffile-prefix-map=${TOP_DIR}=."
+
 if [ -z "$HOST_BUILD_MODE" ]; then
   if [ -z "$ANDROID_HOME" ]; then
     echo "The ANDROID_HOME environment variable is not set" >&2
@@ -245,6 +248,13 @@ if [ -z "$HOST_BUILD_MODE" ]; then
   if [ ! -f "$ANDROID_CMAKE_TOOLCHAIN" ]; then
     echo "The Android NDK cross compilation toolchain is missing: $ANDROID_CMAKE_TOOLCHAIN" >&2
     exit 1
+  fi
+
+  # clang resolves symlinks when locating its headers, so map both the given and the real NDK path
+  REPRODUCIBLE_CFLAGS="$REPRODUCIBLE_CFLAGS -ffile-prefix-map=${ANDROID_NDK_ROOT}=/ndk"
+  ndk_real_path=`readlink -f "$ANDROID_NDK_ROOT"`
+  if [[ "$ndk_real_path" != "$ANDROID_NDK_ROOT" ]]; then
+    REPRODUCIBLE_CFLAGS="$REPRODUCIBLE_CFLAGS -ffile-prefix-map=${ndk_real_path}=/ndk"
   fi
 
   export PATH="$ANDROID_TOOLCHAIN/bin:$PATH"
@@ -357,7 +367,7 @@ function select_abi {
     gc_sections_flags="-fvisibility=hidden -ffunction-sections -fdata-sections"
   fi
 
-  export CFLAGS="${BUILD_TYPE_CFLAGS} -fPIC ${gc_sections_flags} $ABI_CFLAGS"
+  export CFLAGS="${BUILD_TYPE_CFLAGS} -fPIC ${gc_sections_flags} $ABI_CFLAGS $REPRODUCIBLE_CFLAGS"
   export LDFLAGS="${ABI_LDFLAGS}"
 }
 
@@ -384,7 +394,7 @@ function select_host_abi {
     gc_sections_flags="-fvisibility=hidden -ffunction-sections -fdata-sections"
   fi
 
-  export CFLAGS="${BUILD_TYPE_CFLAGS} -fPIC ${gc_sections_flags}"
+  export CFLAGS="${BUILD_TYPE_CFLAGS} -fPIC ${gc_sections_flags} $REPRODUCIBLE_CFLAGS"
   export LDFLAGS=""
 }
 
@@ -449,10 +459,13 @@ EOF
   # NOTE: only download pinned dependencies, install the other ones manually (e.g. libffi)
   meson subprojects download pcre2 proxy-libintl
 
+  # the localedir and charsetalias_dir are unused in Android
   PKG_CONFIG="`which pkg-config`" \
   PKG_CONFIG_LIBDIR="$INSTALL_DIR/lib/pkgconfig" \
   meson setup --cross-file "$cross_file" \
       --prefix="$INSTALL_DIR" \
+      --localedir=/usr/share/locale \
+      -Dcharsetalias_dir=/usr/lib \
       --wrap-mode=nodownload \
       -Dselinux=disabled -Dxattr=false -Dlibmount=disabled \
       -Dbsymbolic_functions=false -Dtests=false -Dnls=disabled \
@@ -480,9 +493,11 @@ function build_gpgerror {
     host_flag="--host $HOST"
   fi
 
+  # avoid embedding the INSTALL_DIR into the library via LOCALEDIR and SYSCONFDIR.
+  # NLS is disabled as the translations are not shipped, sysconfdir is not used on Android
   "$GPGERROR_SRC/configure" --prefix="$INSTALL_DIR" \
-      $host_flag \
-      --enable-static --disable-shared --disable-tests -disable-doc
+      $host_flag --sysconfdir=/etc \
+      --enable-static --disable-shared --disable-tests -disable-doc --disable-nls
 
   if [ -z "$HOST_BUILD_MODE" ]; then
     # needed to manually generate lock-obj-pub. files. Run from /data/local/tmp
@@ -570,12 +585,15 @@ function build_lemon {
 function build_wireshark {
   # https://zwyuan.github.io/2016/07/18/cross-compile-wireshark-for-android
   local android_opts=
+  local cmake_cflags="$CFLAGS"
 
   if [ -z "$HOST_BUILD_MODE" ]; then
     # Android cross-compilation
     android_opts="-DCMAKE_SYSTEM_NAME=Android -DCMAKE_TOOLCHAIN_FILE=$ANDROID_CMAKE_TOOLCHAIN \
       -DANDROID_NDK=$ANDROID_NDK_ROOT -DANDROID_ABI=$ABI -DCMAKE_ANDROID_ARCH_ABI=$ABI \
       -DANDROID_PLATFORM=android-$MIN_SDK -DCMAKE_SYSTEM_VERSION=$MIN_SDK"
+
+    cmake_cflags="$REPRODUCIBLE_CFLAGS"
   fi
 
   # Disable optional deps that ushark does not use. On the Android sysroot these
@@ -583,6 +601,7 @@ function build_wireshark {
   # the system, pulling unresolved libxml2/c-ares symbols into the static libs
   # that the ushark link does not provide. Keep all targets self-contained.
   cmake $android_opts \
+    -DCMAKE_C_FLAGS="$cmake_cflags" \
     -DCMAKE_DISABLE_FIND_PACKAGE_LibXml2=ON \
     -DCMAKE_DISABLE_FIND_PACKAGE_CARES=ON \
     -DLEMON_BIN="${HOST_BUILD}/wireshark/run/lemon" \
