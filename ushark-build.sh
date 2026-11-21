@@ -36,6 +36,8 @@ NGHTTP2_VERSION="1.69.0"
 NGHTTP2_SHA256="3f185f5b1c3e77885eb9cf3f2c4da4b1a9f73a24bf5957b829183ad137f82dc8"
 LIBFFI_VERSION="3.6.0"
 LIBFFI_SHA256="31ff1fe32deaebfbb388727f32677bb254bf2a41382c51464c0b1837c9ee9828"
+FLEX_VERSION="2.6.4"
+FLEX_SHA256="e87aae032bf07c26f85ac0ed3250998c37621d95f8bd748b31f15b33c45ee995"
 WIRESHARK_TAG="v4.7.1-ushark"
 USHARK_TAG="pcapdroid-v4.7.1"
 
@@ -131,6 +133,7 @@ function pull_dependencies {
   download_and_verify libgcrypt "https://gnupg.org/ftp/gcrypt/libgcrypt/libgcrypt-$LIBGCRYPT_VERSION.tar.bz2" $LIBGCRYPT_SHA256
   download_and_verify nghttp2 "https://github.com/nghttp2/nghttp2/releases/download/v$NGHTTP2_VERSION/nghttp2-$NGHTTP2_VERSION.tar.bz2" $NGHTTP2_SHA256
   download_and_verify libffi "https://github.com/libffi/libffi/releases/download/v$LIBFFI_VERSION/libffi-$LIBFFI_VERSION.tar.gz" $LIBFFI_SHA256
+  download_and_verify flex "https://github.com/westes/flex/releases/download/v$FLEX_VERSION/flex-$FLEX_VERSION.tar.gz" $FLEX_SHA256
 
   clone_and_checkout wireshark "https://github.com/emanuele-f/wireshark" $WIRESHARK_TAG
 
@@ -268,6 +271,7 @@ LIBFFI_SRC="$TOP_DIR/modules/libffi"
 GPGERROR_SRC="$TOP_DIR/modules/libgpg-error"
 GCRYPT_SRC="$TOP_DIR/modules/libgcrypt"
 NGHTTP2_SRC="$TOP_DIR/modules/nghttp2"
+FLEX_SRC="$TOP_DIR/modules/flex"
 WIRESHARK_SRC="$TOP_DIR/modules/wireshark"
 
 if [ -z "$LOCAL_USHARK" ]; then
@@ -568,6 +572,20 @@ function build_nghttp2 {
   $MAKE install
 }
 
+function build_flex {
+  local host_flex="${HOST_BUILD}/flex"
+
+  if [ ! -x "$LEX_BIN" ] || [[ "`"$LEX_BIN" --version`" != "flex $FLEX_VERSION" ]]; then
+    rm -rf "$host_flex"
+    mkdir -p "$host_flex"
+    cd "$host_flex"
+
+    # _GNU_SOURCE is needed for the reallocarray declaration with recent glibc
+    CFLAGS="-O2 -std=gnu17 -D_GNU_SOURCE" "$FLEX_SRC/configure" --disable-nls
+    $MAKE -C src flex
+  fi
+}
+
 function build_lemon {
   # build lemon for the build machine
   local host_wireshark="${HOST_BUILD}/wireshark"
@@ -577,7 +595,7 @@ function build_lemon {
     mkdir -p "$host_wireshark"
     cd "$host_wireshark"
 
-    cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF "$WIRESHARK_SRC"
+    cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DLEX_EXECUTABLE="$LEX_BIN" "$WIRESHARK_SRC"
     $MAKE lemon
   fi
 }
@@ -605,6 +623,7 @@ function build_wireshark {
     -DCMAKE_DISABLE_FIND_PACKAGE_LibXml2=ON \
     -DCMAKE_DISABLE_FIND_PACKAGE_CARES=ON \
     -DLEMON_BIN="${HOST_BUILD}/wireshark/run/lemon" \
+    -DLEX_EXECUTABLE="$LEX_BIN" \
     -DHAVE_C99_VSNPRINTF=TRUE \
     -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DBUILD_SHARED_LIBS=OFF -DENABLE_WERROR=OFF \
     -DGLIB2_LIBRARY="$INSTALL_DIR/lib/libglib-2.0.a" \
@@ -722,6 +741,7 @@ function run_build {
 }
 
 HOST_BUILD="${TOP_DIR}/build/host"
+LEX_BIN="${HOST_BUILD}/flex/src/flex"
 mkdir -p "${HOST_BUILD}"
 
 compiled=
@@ -730,6 +750,7 @@ declare -a libs=(iconv libffi glib2 gpgerror gcrypt nghttp2 wireshark ushark)
 
 trap check_error EXIT
 
+run_build flex
 run_build lemon
 cd "$TOP_DIR"
 
