@@ -1,0 +1,55 @@
+name: Build
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        type: [debug, release]
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install packages
+      run: sudo apt install -y wget git sed coreutils build-essential
+           cmake perl automake autoconf m4 gettext
+           libglib2.0-dev libgcrypt20-dev libcares2 libpcre2-dev
+
+    - name: Install meson
+      run: pipx install 'meson>=1.4.0'
+
+    - name: Install Android NDK
+      run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;28.2.13676358"
+
+    - name: Build
+      run: ./ushark-build.sh -t ${{ matrix.type }} -v
+
+    - name: Verify reproducibility
+      if: matrix.type == 'release'
+      run: |
+        failed=
+        for abi in armeabi-v7a arm64-v8a x86 x86_64; do
+          built=`sha256sum dist/jniLibs/$abi/libushark.so | awk '{ print $1 }'`
+          committed=`sha256sum release/jniLibs/$abi/libushark.so | awk '{ print $1 }'`
+
+          if [[ "$built" == "$committed" ]]; then
+            echo "$abi: OK ($built)"
+          else
+            echo "$abi: MISMATCH (built $built, committed $committed)"
+            failed=1
+          fi
+        done
+
+        if [ -n "$failed" ]; then
+          echo "The built libraries do not match the committed ones" >&2
+          exit 1
+        fi
+
+    - name: Upload libraries
+      if: failure() && matrix.type == 'release'
+      uses: actions/upload-artifact@v4
+      with:
+        name: libushark-release
+        path: dist/jniLibs
